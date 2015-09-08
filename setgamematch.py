@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import sys
 import os
 import cv
@@ -48,7 +50,7 @@ class SetHand:
             for j, card2 in enumerate(self.cards):
                 if i < j:
                     card3 = SetCard(missing_card(card1, card2))
-                    
+
                     if card3.code() in codes:
                         s = [card1.code(), card2.code(), card3.code()]
                         s.sort()
@@ -70,6 +72,10 @@ def missing_card(card1, card2):
 
 
 if __name__=='__main__':
+    if len(sys.argv) != 2:
+        sys.stderr.write('usage: %s <img>\n' % sys.argv[0])
+        sys.exit(1)
+
     symbol_colors = np.array([[130, 165, 165], # open green
                               [60, 130, 80], # open green (hack)
                               [50, 80, 190],   # open red
@@ -96,7 +102,7 @@ if __name__=='__main__':
 
     # threshold to binary image
     # todo: change to otsu threshold
-    ret,thresh = cv2.threshold(imgray, 127, 255, 0)
+    ret,thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU) #0)
 
     # extract contours and regions
     contours, hierarchy = cv2.findContours(thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -125,7 +131,7 @@ if __name__=='__main__':
         if parent_id in card_ids:
             # mask image
             mask = np.zeros(imgray.shape, np.uint8)
-            cv2.drawContours(mask, [contours[i]], 0, 255, -1)
+            cv2.drawContours(im, [contours[i]], -1, (0,255,0), 3)
 
             # compute BGR mean to identify color and shading
             mean = map(int, cv2.mean(im, mask = mask)[:3])
@@ -154,8 +160,11 @@ if __name__=='__main__':
         v = [len(symbols) % 3,] + symbols.values()[0]
         card = SetCard(v, contours[c])
 
-        #print card
+        # add card to hand
         hand.add(card)
+
+        # draw contour around card
+        cv2.drawContours(im, [contours[c]], -1, (255,0,0), 3)
 
         # label card on original image
         bx, by, bw, bh = cv2.boundingRect(contours[c])
