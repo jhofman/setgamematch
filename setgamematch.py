@@ -2,7 +2,6 @@
 
 import sys
 import os
-import cv
 import cv2
 import numpy as np
 from collections import defaultdict
@@ -38,7 +37,7 @@ class SetHand:
             self.cards.append(card)
 
     def add(self, card):
-        self.cards.append(v if isinstance(v, SetCard) else SetCard(v))
+        self.cards.append(card if isinstance(card, SetCard) else SetCard(card))
 
     def find_sets(self):
         # todo: change to dict to reference SetCard (for contour drawing)
@@ -65,7 +64,7 @@ class SetHand:
         return sets
 
 def is_set_match(card1, card2, card3):
-    return ((card1.v + card2.v + card3.v) % 3 == 0).prod() == 1
+    return ((card1.v + card2.v + card3.v) % 3 == 0).all()
 
 def missing_card(card1, card2):
     return (np.array([0,0,0,0]) - ((card1.v + card2.v) % 3)) % 3
@@ -100,84 +99,84 @@ if __name__=='__main__':
     # convert to grayscale
     imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
 
-    # threshold to binary image
-    # todo: change to otsu threshold
-    ret,thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU) #0)
+    # threshold to binary image using Otsu's method
+    ret, thresh = cv2.threshold(imgray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
     # extract contours and regions
     contours, hierarchy = cv2.findContours(thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
     hierarchy = hierarchy[0]
 
     # identify cards as large areas with children but no parents
-    # and other regions as candidate symbols
     card_ids = set()
-    symbol_ids = set()
     for i, cnt in enumerate(contours):
-        # todo: adaptive size threshold
-        if cv2.contourArea(cnt) >= im.shape[0]*im.shape[1] / 5000: 
+        area = cv2.contourArea(cnt)
+        # Adaptive size threshold: cards should be at least 1/100 of image area
+        if area >= im.shape[0] * im.shape[1] / 100: 
             if hierarchy[i][2] > 0 and hierarchy[i][3] == -1:
                 card_ids.add(i)
-            else:
-                symbol_ids.add(i)
-
-    # show original image
-    cv2.imshow('display', im)
 
     # identify all symbol regions with their parent card
+    # symbols are direct children of cards that are large enough
     cards = defaultdict(dict)
-    for i in symbol_ids:
-        parent_id = hierarchy[i][3]
- 
-        if parent_id in card_ids:
-            # mask image
-            mask = np.zeros(imgray.shape, np.uint8)
-            cv2.drawContours(im, [contours[i]], -1, (0,255,0), 3)
+    for card_id in card_ids:
+        # Get all direct children of this card
+        child_id = hierarchy[card_id][2]  # first child
+        while child_id != -1:
+            area = cv2.contourArea(contours[child_id])
+            # Symbols should be at least 1/5000 of image area to filter out noise
+            if area >= im.shape[0] * im.shape[1] / 5000:
+                # create mask for this symbol
+                mask = np.zeros(imgray.shape, np.uint8)
+                cv2.drawContours(mask, [contours[child_id]], -1, 255, -1)
 
-            # compute BGR mean to identify color and shading
-            mean = map(int, cv2.mean(im, mask = mask)[:3])
-            err = np.abs(symbol_colors - mean).sum(1)
-            shading, color = symbol_codes[err == err.min()][0]
-            err_symbol = err
+                # compute BGR mean to identify color and shading
+                mean = list(map(int, cv2.mean(im, mask=mask)[:3]))
+                err = np.abs(symbol_colors - mean).sum(1)
+                shading, color = symbol_codes[err == err.min()][0]
 
-            # compute ratio of symbol area to bounding rectangle
-            # to identify shape
-            area = cv2.contourArea(contours[i])
-            bx, by, bw, bh = cv2.boundingRect(contours[i])
-            extent = area / (bw * bh)
-            err = np.abs(symbol_extents - extent)
-            shape =  (err == err.min()).nonzero()[0][0]
-            err_shape = err
+                # compute ratio of symbol area to bounding rectangle
+                # to identify shape
+                bx, by, bw, bh = cv2.boundingRect(contours[child_id])
+                # Avoid division by zero
+                if bw > 0 and bh > 0:
+                    extent = area / (bw * bh)
+                    err = np.abs(symbol_extents - extent)
+                    shape = (err == err.min()).nonzero()[0][0]
+                else:
+                    shape = 0  # default to diamond if we can't compute extent
 
-            cards[parent_id][i] = [color, shading, shape]
-
-            #cv2.putText(im, repr(cards[parent_id][i]), (bx, int(by+bh/10.0)), cv2.FONT_HERSHEY_PLAIN, 2.0, (255,255,255), 5)
+                cards[card_id][child_id] = [color, shading, shape]
+            
+            # Move to next sibling
+            child_id = hierarchy[child_id][0]
 
 
     # construct and label cards and add to hand
     hand = SetHand()
-    for c, symbols in cards.iteritems():
+    for c, symbols in cards.items():
         # build card object
-        v = [len(symbols) % 3,] + symbols.values()[0]
-        card = SetCard(v, contours[c])
+        symbol_values = list(symbols.values())
+        if len(symbol_values) > 0:
+            v = [len(symbols) % 3,] + symbol_values[0]
+            card = SetCard(v, contours[c])
 
-        # add card to hand
-        hand.add(card)
+            # add card to hand
+            hand.add(card)
 
-        # draw contour around card
-        cv2.drawContours(im, [contours[c]], -1, (255,0,0), 3)
+            # draw contour around card
+            cv2.drawContours(im, [contours[c]], -1, (255, 0, 0), 3)
 
-        # label card on original image
-        bx, by, bw, bh = cv2.boundingRect(contours[c])
-        cv2.putText(im, repr(card), (bx, int(by+bh/10.0)), cv2.FONT_HERSHEY_PLAIN, 2.0, (0,0,0), 5)
-
+            # label card on original image
+            bx, by, bw, bh = cv2.boundingRect(contours[c])
+            cv2.putText(im, repr(card), (bx, int(by + bh / 10.0)), cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 0), 5)
 
     # print sets
     for i, s in enumerate(hand.find_sets()):
-        print "set #" + str(i+1) + ":",
+        print("set #" + str(i + 1) + ":", end=" ")
         desc = ", ".join(map(str, s))
-        cv2.putText(im, desc, (100, 100*(1+i)), cv2.FONT_HERSHEY_PLAIN, 4.0, (0,0,0), 5)
-        print desc
+        cv2.putText(im, desc, (100, 100 * (1 + i)), cv2.FONT_HERSHEY_PLAIN, 4.0, (0, 0, 0), 5)
+        print(desc)
 
     # save labeled image
     outfile = '%s_labeled%s' % os.path.splitext(infile)
-    cv.SaveImage(outfile, cv.fromarray(im))
+    cv2.imwrite(outfile, im)
