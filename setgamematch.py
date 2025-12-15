@@ -179,7 +179,9 @@ if __name__=='__main__':
         # build card object
         symbol_values = list(symbols.values())
         if len(symbol_values) > 0:
-            # Calculate number: 1, 2, or 3 (not 0)
+            # Calculate number using modulo for Set game logic
+            # In Set, attributes are 0/1/2 where 0 represents the third option
+            # So: 1 symbol -> 1%3=1, 2 symbols -> 2%3=2, 3 symbols -> 3%3=0
             num_symbols = len(symbols)
             if num_symbols > 3:
                 num_symbols = 3  # Cap at 3 for Set rules
@@ -199,7 +201,7 @@ if __name__=='__main__':
             cards_with_no_symbols.append(c)
     
     if cards_with_no_symbols:
-        sys.stderr.write(f'Warning: {len(cards_with_no_symbols)} card(s) detected with no symbols\n')
+        sys.stderr.write('Warning: %d card(s) detected with no symbols\n' % len(cards_with_no_symbols))
 
     # print sets
     for i, s in enumerate(hand.find_sets()):
