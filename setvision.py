@@ -453,7 +453,7 @@ def symbol_features(norm, sig, sym):
     solidity = area / max(polygon_area(hull), 1.0)
     extent = area / float(w * h)
     return dict(hue=hue, rgb=[float(v) for v in rgb], fill=fill, solidity=solidity, extent=extent,
-                edge=edge_ink, stripe=stripe)
+                edge=edge_ink, stripe=stripe, profile=[p / edge_ink for p in profile], core=core)
 
 
 def stripe_score(profile):
@@ -618,7 +618,7 @@ def read_card_oriented(rgb, q):
         shading=classify_shading(fill, stripe),
         shape=classify_shape(solidity, extent),
         features=dict(hue=hue, fill=fill, solidity=solidity, extent=extent, stripe=stripe),
-        _debug=dict(card=card, norm=norm, sig=sig, symbols=symbols, misfit=misfit, stray=stray,
+        _debug=dict(card=card, norm=norm, sig=sig, mask=mask, symbols=symbols, feats=feats, misfit=misfit, stray=stray,
                     slots=number, count=len(symbols), shape_d=shape_distance(solidity, extent)),
     )
 

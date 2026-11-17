@@ -254,3 +254,71 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
   .topbar { gap: 6px; }
   .brand { font-size: 0.9375rem; }
 }
+
+/* ===================================================== "How it works" page */
+.doc main { max-width: 720px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.toc a {
+  font-size: 0.875rem; text-decoration: none; color: var(--text-2);
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-2);
+}
+.toc a:hover { color: var(--text); border-color: var(--border-hover); }
+.q { margin-top: 36px; scroll-margin-top: 64px; }
+.q h2 { font-size: 1.25rem; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.q h3 { display: flex; align-items: center; gap: 10px; font-size: 1.0625rem; margin: 28px 0 6px; }
+.q p, .q li { color: var(--text); }
+.q p { margin: 0 0 10px; }
+.q ul { padding-left: 1.2em; }
+.q li { margin: 6px 0; }
+.step {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text); font-size: 0.8125rem; font-weight: 700;
+}
+.note { font-size: 0.875rem; color: var(--text-2) !important; }
+
+.fig { display: grid; gap: 10px; margin: 12px 0 8px; }
+.fig-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fig-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fig-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 640px) { .fig-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.fig figure, .fig-wide { margin: 0; }
+.fig img {
+  display: block; width: 100%; height: auto;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000;
+}
+.fig.shading img { aspect-ratio: 3 / 4; object-fit: contain; background: #fff; }
+.fig.shapes img { aspect-ratio: 3 / 4; object-fit: contain; background: #fff; padding: 6px; }
+figcaption { font-size: 0.8125rem; color: var(--text-2); margin-top: 6px; line-height: 1.4; }
+.fig figcaption { text-align: center; }
+.fig-wide { margin: 14px 0 10px; }
+.num { font-variant-numeric: tabular-nums; font-size: 0.75rem; }
+.chart { width: 100%; overflow: hidden; }
+.chart svg { display: block; font-family: var(--font); }
+.spark { margin-top: 4px; }
+.diagram { display: block; width: 100%; height: auto; }
+.dot { cursor: default; outline: none; }
+.dot:focus-visible circle:last-child { stroke: var(--accent); stroke-width: 3; }
+.tooltip {
+  position: fixed; z-index: 20; pointer-events: none; max-width: 240px;
+  padding: 6px 9px; font-size: 0.8125rem; line-height: 1.35;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+.tooltip .muted { color: var(--text-2); }
+
+.table-wrap { overflow-x: auto; margin: 10px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+thead th { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+td.r, th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.codes { font-size: 0.875rem; table-layout: fixed; }
+table.codes th, table.codes td { padding: 7px 4px; }
+table.codes thead th { font-size: 0.75rem; letter-spacing: 0; text-transform: none; text-align: center; }
+table.codes thead th:first-child { width: 36%; }
+table.codes td { text-align: center; font-variant-numeric: tabular-nums; }
+table.codes tbody th { font-weight: 500; }
+table.codes tr.sum th, table.codes tr.sum td { font-weight: 650; border-bottom: 0; border-top: 2px solid var(--border); }
+.footer-links { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 0.875rem; }
+.more { margin: 20px 0 0; font-size: 0.9375rem; }
