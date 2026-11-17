@@ -36,7 +36,7 @@ def squiggle(n=48, amp=6.5, r=11.5):
 
 def icon(size, pad):
     S = size * 4
-    img = Image.new("RGB", (S, S), (91, 61, 170))
+    img = Image.new("RGB", (S, S), (9, 105, 218))   # the app accent, #0969da
     d = ImageDraw.Draw(img)
     m = int(S * pad)
     cw = S - 2 * m

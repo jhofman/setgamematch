@@ -6,7 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const INK = { red: "#e5352b", green: "#1a9e4b", purple: "#6a3fa0" };
   // outline colours for the sets (chosen to stay distinct on a photo)
-  const SET_COLORS = ["#f4821f", "#19a974", "#3d8bfd", "#e0399f", "#c9a400", "#00b8c4", "#8a63f6", "#d9483b"];
+  const HIGHLIGHT = "#2f81f7";   // outline of the highlighted set on the photo
 
   const SHOW_MAX = 1600;   // longest side of the photo as displayed
   const FULL_MAX = 4096;   // longest side handed to the detector (canvas size limits on phones)
@@ -89,22 +89,16 @@
       ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
       ctx.fill("evenodd");
       ctx.restore();
-      ctx.strokeStyle = SET_COLORS[state.selected % SET_COLORS.length];
-      ctx.lineWidth = 7 * unit;
+      ctx.strokeStyle = HIGHLIGHT;
+      ctx.lineWidth = 6 * unit;
       for (const i of triple) { tracePath(state.cards[i].quad, 0); ctx.stroke(); }
       return;
     }
 
-    // every detected card gets a thin outline; cards in sets get one ring per set
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-    ctx.lineWidth = 2 * unit;
+    // nothing highlighted: a thin outline round every card that was found
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.lineWidth = 3 * unit;
     for (const card of state.cards) { tracePath(card.quad, 0); ctx.stroke(); }
-    const depth = state.cards.map(() => 0);
-    state.sets.forEach((triple, n) => {
-      ctx.strokeStyle = SET_COLORS[n % SET_COLORS.length];
-      ctx.lineWidth = 5 * unit;
-      for (const i of triple) { tracePath(state.cards[i].quad, 0.08 * depth[i]++); ctx.stroke(); }
-    });
   }
 
   // ---------------------------------------------------------------- results
@@ -112,28 +106,32 @@
 
   function render() {
     state.sets = SV.findSets(state.cards);
-    if (state.selected !== null && state.selected >= state.sets.length) state.selected = null;
+    if (state.selected !== null && state.selected >= state.sets.length) state.selected = state.sets.length ? 0 : null;
     const summary = $("summary"), sets = $("sets"), cards = $("cards");
 
     if (!state.cards.length) {
       summary.innerHTML = "No cards found<small>Try again with the cards on a darker, plain surface, " +
         "all fully in the frame and not touching.</small>";
     } else if (!state.sets.length) {
-      summary.innerHTML = `${plural(state.cards.length, "card")}, no sets<small>` +
-        "If that looks right, deal three more cards.</small>";
+      summary.innerHTML = `No sets among ${plural(state.cards.length, "card")}<small>` +
+        "If the cards below look right, deal three more.</small>";
     } else {
-      summary.innerHTML = `${plural(state.cards.length, "card")}, ${plural(state.sets.length, "set")}` +
-        "<small>Tap a set to show it on the photo.</small>";
+      summary.innerHTML = `${plural(state.sets.length, "set")} among ${plural(state.cards.length, "card")}`;
     }
+    const tip = $("sets-box").querySelector("small");
+    tip.textContent = state.sets.length > 1 ? "Tap one to show it on the photo" : "Shown on the photo";
+    $("sets-box").hidden = !state.sets.length;
+    $("cards-box").hidden = !state.cards.length;
+    $("set-count").textContent = state.sets.length;
+    $("card-count").textContent = state.cards.length;
 
     sets.innerHTML = "";
     state.sets.forEach((triple, n) => {
       const b = document.createElement("button");
       b.className = "set";
-      b.style.setProperty("--set-color", SET_COLORS[n % SET_COLORS.length]);
       b.setAttribute("aria-pressed", String(state.selected === n));
       b.setAttribute("aria-label", "Set " + (n + 1) + ": " + triple.map((i) => SV.cardName(state.cards[i])).join(", "));
-      b.innerHTML = '<span class="swatch"></span>' + triple.map((i) => cardSVG(state.cards[i])).join("");
+      b.innerHTML = triple.map((i) => cardSVG(state.cards[i])).join("");
       b.addEventListener("click", () => {
         state.selected = state.selected === n ? null : n;
         render();
@@ -142,7 +140,6 @@
       sets.appendChild(b);
     });
 
-    $("cards-title").hidden = !state.cards.length;
     cards.innerHTML = "";
     state.cards.forEach((card, i) => {
       const b = document.createElement("button");
@@ -182,7 +179,7 @@
     state.cards.splice(editing, 1);
     editor.close();
   });
-  editor.addEventListener("close", () => { state.selected = null; render(); });
+  editor.addEventListener("close", () => { state.selected = 0; render(); });
 
   // tapping a card on the photo opens it too
   photo.addEventListener("click", (e) => {
@@ -259,7 +256,8 @@
     $("again").hidden = false;
     state.cards = []; state.sets = []; state.selected = null; state.image = null;
     $("summary").textContent = "";
-    $("sets").innerHTML = ""; $("cards").innerHTML = ""; $("cards-title").hidden = true;
+    $("sets").innerHTML = ""; $("cards").innerHTML = "";
+    $("sets-box").hidden = true; $("cards-box").hidden = true;
     $("busy").hidden = false;
     try {
       const bitmap = await loadBitmap(source);
@@ -289,6 +287,7 @@
       for (const card of cards) card.quad = card.quad.map((p) => [p[0] * k, p[1] * k]);
       big.width = big.height = 0;      // release the memory promptly
       state.cards = cards;
+      state.selected = 0;     // highlight the first set straight away (if there is one)
       render();
     } catch (err) {
       $("summary").innerHTML = "Could not read that photo<small>" + String(err.message || err) + "</small>";
@@ -314,6 +313,25 @@
     $("again").hidden = true;
     $("start").hidden = false;
   });
+
+  // light / dark toggle (the initial theme is set by a script in <head>)
+  const MOON = '<path d="M9.6 1.2a6.8 6.8 0 1 0 5.2 9.9A5.6 5.6 0 0 1 9.6 1.2Z"/>';
+  const SUN = '<circle cx="8" cy="8" r="3.2"/><path d="M8 0.5v2M8 13.5v2M0.5 8h2M13.5 8h2M2.7 2.7l1.4 1.4M11.9 11.9l1.4 1.4M2.7 13.3l1.4-1.4M11.9 4.1l1.4-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>';
+  const toggle = $("theme-toggle");
+  function showTheme() {
+    const dark = document.documentElement.dataset.theme === "dark";
+    toggle.querySelector("svg").innerHTML = dark ? SUN : MOON;
+    toggle.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = getComputedStyle(document.body).backgroundColor;
+  }
+  toggle.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) { /* private mode */ }
+    showTheme();
+  });
+  showTheme();
 
   // service workers only exist on https (and localhost)
   if ("serviceWorker" in navigator) {
