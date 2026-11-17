@@ -1,1 +1,6 @@
 *.pyc
+.venv/
+.DS_Store
+*~
+__pycache__/
+docs/_test/

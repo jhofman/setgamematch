@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Set Finder</title>
+  <meta name="description" content="Point your camera at a board of Set cards and see every set on it.">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Set Finder">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <script>
+    // light or dark, set before first paint so nothing flashes
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("theme"); } catch (e) {}
+      if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- stripe patterns shared by every card drawing on the page -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <pattern id="stripe-red" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#e5352b"/></pattern>
+      <pattern id="stripe-green" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#1a9e4b"/></pattern>
+      <pattern id="stripe-purple" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#6a3fa0"/></pattern>
+    </defs>
+  </svg>
+
+  <header class="topbar">
+    <a class="brand" href="./"><span class="brand-dot"></span>Set Finder</a>
+    <span class="spacer"></span>
+    <button id="again" class="small" hidden>New photo</button>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 1.2a6.8 6.8 0 1 0 5.2 9.9A5.6 5.6 0 0 1 9.6 1.2Z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/jhofman/setgamematch" aria-label="Source on GitHub">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.67.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+    </a>
+  </header>
+
+  <main>
+    <section id="start">
+      <h1 class="page-title">Find every set on the table</h1>
+      <p class="lead">Take a photo of the cards. Everything runs on your phone; the photo never leaves it.</p>
+      <div class="actions">
+        <label class="button primary">
+          <input id="camera" type="file" accept="image/*" capture="environment" hidden>
+          Take photo
+        </label>
+        <label class="button">
+          <input id="library" type="file" accept="image/*" hidden>
+          Choose a photo
+        </label>
+      </div>
+      <button id="sample" class="link">Try a sample board</button>
+      <div class="panel">
+        <span class="label">For best results</span>
+        <ul class="tips">
+          <li>Lay the cards on a darker, plain surface, not touching each other.</li>
+          <li>Keep every card fully in the frame; any angle or rotation is fine.</li>
+          <li>Avoid strong glare on the cards.</li>
+        </ul>
+      </div>
+      <p class="more"><a href="how.html">How does it work?</a></p>
+    </section>
+
+    <section id="result" hidden>
+      <div id="stage">
+        <canvas id="photo"></canvas>
+        <div id="busy" hidden><span class="spinner"></span>Looking for cards…</div>
+      </div>
+      <p id="summary" role="status"></p>
+      <section class="box" id="sets-box" hidden>
+        <div class="box-head"><h2>Sets <span class="counter" id="set-count"></span></h2><small>Tap one to show it on the photo</small></div>
+        <div id="sets"></div>
+      </section>
+      <section class="box" id="cards-box" hidden>
+        <div class="box-head"><h2>Cards <span class="counter" id="card-count"></span></h2><small>Tap one to correct it</small></div>
+        <div id="cards"></div>
+      </section>
+      <p class="more"><a href="how.html">How does it work?</a></p>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form method="dialog">
+      <div id="editor-preview"></div>
+      <div id="editor-fields"></div>
+      <div class="dialog-actions">
+        <button type="button" id="editor-remove" class="danger">Not a card</button>
+        <button type="submit" class="primary">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="setvision.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

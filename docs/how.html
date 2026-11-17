@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>How it works · Set Finder</title>
+  <meta name="description" content="How Set Finder reads a photo of Set cards, step by step, with the real intermediate images.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("theme"); } catch (e) {}
+      if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="doc">
+  <header class="topbar">
+    <a class="brand" href="./"><span class="brand-dot"></span>Set Finder</a>
+    <span class="spacer"></span>
+    <a class="topbar-link" href="./">Find sets</a>
+    <a class="topbar-link" href="how.html" aria-current="page">How it works</a>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 1.2a6.8 6.8 0 1 0 5.2 9.9A5.6 5.6 0 0 1 9.6 1.2Z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <h1 class="page-title">How it works</h1>
+    <p class="lead">Set Finder reads a photo of the table with a few hundred lines of classical computer vision: no neural network, no server. Here is what it does, using the real intermediate images from one photo.</p>
+
+    <nav class="toc" aria-label="Questions on this page">
+      <a href="#how">How does it read the cards?</a>
+      <a href="#finding-sets">How does it find the sets?</a>
+      <a href="#accuracy">How accurate is it?</a>
+      <a href="#fails">When does it get it wrong?</a>
+      <a href="#why">Why not a neural network?</a>
+      <a href="#privacy">Does my photo get uploaded?</a>
+      <a href="#history">Where did this come from?</a>
+    </nav>
+
+    <!-- ============================================================== how -->
+    <section id="how" class="q">
+      <h2>How does it read the cards?</h2>
+      <p>In two halves. First it finds every card and flattens it into a standard rectangle, so that whatever the camera angle or lighting, each card looks the same. Then it measures a handful of simple things about the coloured ink on each card.</p>
+
+      <h3><span class="step">1</span>Find the white rectangles</h3>
+      <p>A Set card is white, and white is bright in all three colour channels at once, while wood, carpet and tablecloths are dim in at least one. So the first image it makes keeps, for every pixel, only its <em>weakest</em> channel. The cards jump out. It thresholds that, takes each white blob, and keeps the blobs that are close to a four-sided shape of a card's proportions. The corners of that shape are the card's corners.</p>
+      <div class="fig fig-4">
+        <figure><img src="how/board.jpg" alt="The photo of twelve cards on a wooden floor" loading="lazy"><figcaption>The photo</figcaption></figure>
+        <figure><img src="how/whiteness.jpg" alt="The same photo in grey, where cards are bright and the floor is dark" loading="lazy"><figcaption>Weakest channel</figcaption></figure>
+        <figure><img src="how/threshold.png" alt="Black and white image: cards are white blobs" loading="lazy"><figcaption>Thresholded</figcaption></figure>
+        <figure><img src="how/outlines.jpg" alt="The photo with each card outlined and its four corners marked" loading="lazy"><figcaption>Four corners each</figcaption></figure>
+      </div>
+
+      <h3><span class="step">2</span>Flatten each card and remove the lighting</h3>
+      <p>The four corners give a perspective transform that maps the card onto a flat 300 × 200 pixel rectangle, long side horizontal. Now the symbols always stand upright in a row and any stripes run along the rows of pixels.</p>
+      <p>Then it fits a smooth curved surface through the card's white areas and divides it out. That cancels a warm lamp, a cool window or a light gradient across the card: afterwards the card's white is exactly white everywhere, and the ink keeps its true colour.</p>
+      <div class="fig fig-2">
+        <figure><img src="how/card-warped.jpg" alt="One card, flattened: two striped red ovals on a yellowish card" loading="lazy"><figcaption>Flattened</figcaption></figure>
+        <figure><img src="how/card-normalised.jpg" alt="The same card with the yellow tint removed" loading="lazy"><figcaption>Lighting removed</figcaption></figure>
+      </div>
+
+      <h3><span class="step">3</span>Find the ink and the symbols</h3>
+      <p>Ink is anything darker or more colourful than the white around it. Measuring it against the <em>local</em> white means a shadow falling across the card doesn't count: shadows are grey, and dim every colour equally. The ink image is thresholded, the outlines are filled in, and each solid blob of the right size is one symbol.</p>
+      <div class="fig fig-2">
+        <figure><img src="how/card-ink.png" alt="The ink map: outlines and stripes bright, card black" loading="lazy"><figcaption>Ink</figcaption></figure>
+        <figure><img src="how/card-symbols.png" alt="Two filled white capsule shapes, each in a thin box" loading="lazy"><figcaption>Symbols, filled in</figcaption></figure>
+      </div>
+
+      <h3><span class="step">4</span>Number: where the symbols sit</h3>
+      <p>Symbols are printed in fixed positions, so rather than counting, it asks which layout the symbols fit. This still gives the right answer when glare has wiped out one symbol of three: the two that remain are in the outer slots, and only a three-card puts symbols there.</p>
+      <figure class="fig-wide">
+        <svg id="slots" class="diagram" viewBox="0 0 640 150" role="img" aria-label="Three cards showing symbol slots: one symbol sits in the middle, two sit half a step either side of the middle, three sit at the middle and one full step either side."></svg>
+        <figcaption>The slots for one, two and three symbols. A card with symbols only in the two outer slots is a three, even if the middle one is missing.</figcaption>
+      </figure>
+
+      <h3><span class="step">5</span>Colour: the hue of the strongest ink</h3>
+      <p>It averages the most strongly inked pixels of each symbol, relative to the white just outside it, and converts that to a hue: an angle round the colour wheel. Red, green and purple land far apart, so three fixed ranges are enough. Every dot below is a card from a labelled photo: some from this project, some from Nicolas Hahn's <a href="https://github.com/nicolashahn/set-solver">set-solver</a>.</p>
+      <figure class="fig-wide">
+        <div class="chart" id="chart-hue"></div>
+        <figcaption>Measured hue of <span class="n-cards">189</span> cards, by their true colour. Shaded bands are the ranges the app uses.</figcaption>
+      </figure>
+
+      <h3><span class="step">6</span>Shading: how much ink is inside</h3>
+      <p>It compares the ink in the middle of the symbol (inside the blue outline below) with the ink on the symbol's border. Solid comes out near 1, open near 0, striped in between.</p>
+      <p>Stripes are the hard part: they are thin lines with gaps, so on a small or blurry card they nearly vanish. So it also reads the inside row by row. Striped symbols give a regular up-and-down rhythm; an empty symbol with a bit of glare does not.</p>
+      <div class="fig fig-3 shading">
+        <figure><img src="how/shading-open.jpg" alt="An open purple diamond with a small blue outline in its middle" loading="lazy"><div class="chart spark" data-key="open"></div><figcaption>Open</figcaption></figure>
+        <figure><img src="how/shading-striped.jpg" alt="A striped green diamond with a small blue outline in its middle" loading="lazy"><div class="chart spark" data-key="striped"></div><figcaption>Striped</figcaption></figure>
+        <figure><img src="how/shading-solid.jpg" alt="A solid purple diamond with a small blue outline in its middle" loading="lazy"><div class="chart spark" data-key="solid"></div><figcaption>Solid</figcaption></figure>
+      </div>
+      <p class="note">Under each symbol: ink in each row of the blue region, top to bottom, as a fraction of the border's ink.</p>
+      <figure class="fig-wide">
+        <div class="chart" id="chart-fill"></div>
+        <figcaption>Inside ink of the same <span class="n-cards">189</span> cards. Open below 0.10, solid above 0.84; between 0.10 and 0.20 it is striped only if the rows show a rhythm.</figcaption>
+      </figure>
+
+      <h3><span class="step">7</span>Shape: two ratios</h3>
+      <p>Two numbers tell the shapes apart. <strong>Extent</strong> is how much of its bounding box (grey) the symbol fills: a diamond fills about half, an oval almost all. <strong>Solidity</strong> is how much of its convex hull (blue, a rubber band stretched round it) it fills: only the squiggle has inward curves that leave gaps.</p>
+      <div class="fig fig-3 shapes">
+        <figure><img src="how/shape-diamond.png" alt="A filled diamond inside its bounding box" loading="lazy"><figcaption>Diamond<br><span class="num" data-shape="diamond"></span></figcaption></figure>
+        <figure><img src="how/shape-oval.png" alt="A filled oval nearly filling its bounding box" loading="lazy"><figcaption>Oval<br><span class="num" data-shape="oval"></span></figcaption></figure>
+        <figure><img src="how/shape-squiggle.png" alt="A filled squiggle with gaps between it and the blue hull" loading="lazy"><figcaption>Squiggle<br><span class="num" data-shape="squiggle"></span></figcaption></figure>
+      </div>
+      <figure class="fig-wide">
+        <div class="chart" id="chart-shape"></div>
+        <figcaption>Every card's symbol shape. The three clusters are far apart; each card goes to the nearest one.</figcaption>
+      </figure>
+
+      <h3><span class="step">8</span>Throw out anything that isn't a card</h3>
+      <p>Plenty of things are white and rectangular: the box, the back of the deck, a phone, a sheet of paper. A candidate is kept only if its edge is blank, its symbols sit in the slots, there's little ink anywhere else, and its shapes look like real Set symbols.</p>
+    </section>
+
+    <!-- ============================================================= sets -->
+    <section id="finding-sets" class="q">
+      <h2>How does it find the sets?</h2>
+      <p>Each attribute gets a code of 0, 1 or 2. Three values are all the same or all different exactly when their codes add up to a multiple of 3 (0+0+0, 1+1+1, 2+2+2 or 0+1+2), so three cards are a set when that holds for all four attributes. With 12 cards there are only 220 groups of three, so it simply checks them all.</p>
+      <div class="table-wrap">
+        <table class="codes">
+          <thead><tr><th></th><th>Number</th><th>Colour</th><th>Shading</th><th>Shape</th></tr></thead>
+          <tbody>
+            <tr><th>1 open purple diamond</th><td>0</td><td>2</td><td>0</td><td>0</td></tr>
+            <tr><th>1 open red diamond</th><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+            <tr><th>1 open green diamond</th><td>0</td><td>1</td><td>0</td><td>0</td></tr>
+            <tr class="sum"><th>Sum</th><td>0 ✓</td><td>3 ✓</td><td>0 ✓</td><td>0 ✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================= accuracy -->
+    <section id="accuracy" class="q">
+      <h2>How accurate is it?</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Photos</th><th class="r">Read correctly</th></tr></thead>
+          <tbody>
+            <tr><td>5 board photos and 36 single cards it was developed on</td><td class="r">88 / 88</td></tr>
+            <tr><td>Those boards rotated, blurred, darkened, colour-cast, noisy, low-resolution or at a steep angle</td><td class="r">935 / 936</td></tr>
+            <tr><td>10 board photos from Nicolas Hahn's <a href="https://github.com/nicolashahn/set-solver">set-solver</a>, with glare, shadows and clutter</td><td class="r">125 / 126</td></tr>
+            <tr><td>All 81 cards of a different deck</td><td class="r">81 / 81</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">The last two rows were first run after the detector passed the first two, but they then guided a round of fixes, so they are not a strictly unseen test.</p>
+    </section>
+
+    <!-- ============================================================ fails -->
+    <section id="fails" class="q">
+      <h2>When does it get it wrong?</h2>
+      <ul>
+        <li><strong>Pale backgrounds.</strong> It finds cards by their whiteness, so they need a darker surface underneath. A white tablecloth won't work.</li>
+        <li><strong>Touching cards.</strong> Cards that touch or overlap can merge into one blob and be missed.</li>
+        <li><strong>Heavy glare.</strong> Glare can erase an outline or the stripes entirely, and then there is nothing left to measure.</li>
+      </ul>
+      <p>If a card is misread, tap it in the Cards list to correct it; the sets update straight away.</p>
+    </section>
+
+    <!-- ============================================================== why -->
+    <section id="why" class="q">
+      <h2>Why not a neural network?</h2>
+      <p>Mostly because it isn't needed. Once a card is flattened and its lighting removed, each attribute comes down to one or two numbers, and the charts above show the classes sit far apart. Hand-built measurements like these need only a few dozen labelled examples to set the thresholds, run in well under a second on a phone, and when one goes wrong you can see exactly why.</p>
+    </section>
+
+    <!-- ========================================================== privacy -->
+    <section id="privacy" class="q">
+      <h2>Does my photo get uploaded?</h2>
+      <p>No. The page is static files; the detector is JavaScript that runs in your browser. Once the app has been opened it also works offline.</p>
+    </section>
+
+    <!-- ========================================================== history -->
+    <section id="history" class="q">
+      <h2>Where did this come from?</h2>
+      <p>Jake Hofman wrote the first version by hand in 2013. It found cards by thresholding the whole photo and matched each symbol's average colour against a hand-tuned table, so it worked on the photo it was tuned on and not reliably on much else.</p>
+      <p>In November 2026 he gave Claude Fable 5.2, an AI model, this prompt and went to bed:</p>
+      <blockquote>this is an old repo for computer vision to solve a set board. the computer vision part never worked quite right. i'd like you to fix that. first in local python code and then in something that i could easily deploy on my linode as a website. take a look, let me know if you have questions, and after that i'm going to bed and will see what you've done in the morning.</blockquote>
+      <p>Asked how it should approach it, he said to start classical and train only if needed, aiming for "nearly flawless" but settling for 90–95%. In about an hour of work Claude:</p>
+      <ol class="history">
+        <li>found the root problem: every decision depended on absolute colours, so any change in lighting broke it;</li>
+        <li>rewrote the pipeline described on this page and labelled the 88 cards in the repo's photos as a test, reaching 88 / 88;</li>
+        <li>degraded those photos on purpose (blur, noise, colour casts, perspective) and fixed what broke;</li>
+        <li>ported it to JavaScript with a test that both versions give identical answers, and built this app;</li>
+        <li>tried it on photos it had never seen, from Nicolas Hahn's <a href="https://github.com/nicolashahn/set-solver">set-solver</a>. The first run got only 88 of 126 cards right, mostly faint stripes read as empty; fixing that, plus shadows, glare and the game box, brought it to 125 / 126.</li>
+      </ol>
+      <p>No model was trained. The restyle, this page and the deployment came the next day, in a follow-up session with Claude Opus 5.5. The full story, with the exact prompts, is in the <a href="https://github.com/jhofman/setgamematch#history">README</a>.</p>
+    </section>
+
+    <p class="footer-links"><a href="./">Find sets in a photo</a> · <a href="https://github.com/jhofman/setgamematch">Source on GitHub</a><br>
+      Test photos partly from Nicolas Hahn's <a href="https://github.com/nicolashahn/set-solver">set-solver</a>, with thanks.</p>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="status" hidden></div>
+  <script src="how.js"></script>
+</body>
+</html>
