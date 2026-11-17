@@ -62,7 +62,7 @@
   const hideTip = () => { tip.hidden = true; };
   document.addEventListener("scroll", hideTip, { passive: true });
 
-  const SOURCE = { repo: "photo in this repo", other: "photo from another project" };
+  const SOURCE = { repo: "photo in this repo", other: "photo from nicolashahn/set-solver" };
   function dot(svg, x, y, r, fill, row, value) {
     const g = el("g", { class: "dot", tabindex: "0", "aria-label": `${row.truth}: ${value}` }, svg);
     el("circle", { cx: x, cy: y, r: 10, fill: "transparent" }, g);            // bigger hit target

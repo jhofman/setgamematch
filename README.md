@@ -86,7 +86,12 @@ Known limits:
 `tests/margins.py` prints the range of each feature per class, which is what the thresholds in `setvision.py` were set from.
 `tests/make_assets.py` regenerates the app icons and sample photo (needs Pillow), and `tests/make_explainer.py` regenerates the figures and chart data behind the "How it works" page (`docs/how.html`).
 
-`setgame1.jpeg`, `SetCards.jpeg` and `SetCards2.jpeg` are from the set-solver repository above.
+## Credits
+
+Thanks to Nicolas Hahn ([nicolashahn/set-solver][5]) for the photos that made it possible to test this on more than one deck and table:
+
+* `setgame1.jpeg`, `SetCards.jpeg` and `SetCards2.jpeg` in this repo are copies of photos from that project.
+* The held-out evaluation (`tests/heldout.py`) and part of the charts on the "How it works" page use that project's `image-data` folder; those images are read from a clone of it, not copied here.
 
 [1]: http://en.wikipedia.org/wiki/Set_(game)
 [2]: http://norvig.com/SET.html
