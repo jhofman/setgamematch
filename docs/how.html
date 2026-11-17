@@ -41,6 +41,7 @@
       <a href="#fails">When does it get it wrong?</a>
       <a href="#why">Why not a neural network?</a>
       <a href="#privacy">Does my photo get uploaded?</a>
+      <a href="#history">Where did this come from?</a>
     </nav>
 
     <!-- ============================================================== how -->
@@ -171,6 +172,23 @@
     <section id="privacy" class="q">
       <h2>Does my photo get uploaded?</h2>
       <p>No. The page is static files; the detector is JavaScript that runs in your browser. Once the app has been opened it also works offline.</p>
+    </section>
+
+    <!-- ========================================================== history -->
+    <section id="history" class="q">
+      <h2>Where did this come from?</h2>
+      <p>Jake Hofman wrote the first version by hand in 2013. It found cards by thresholding the whole photo and matched each symbol's average colour against a hand-tuned table, so it worked on the photo it was tuned on and not reliably on much else.</p>
+      <p>In November 2026 he gave Claude Fable 5.2, an AI model, this prompt and went to bed:</p>
+      <blockquote>this is an old repo for computer vision to solve a set board. the computer vision part never worked quite right. i'd like you to fix that. first in local python code and then in something that i could easily deploy on my linode as a website. take a look, let me know if you have questions, and after that i'm going to bed and will see what you've done in the morning.</blockquote>
+      <p>Asked how it should approach it, he said to start classical and train only if needed, aiming for "nearly flawless" but settling for 90–95%. In about an hour of work Claude:</p>
+      <ol class="history">
+        <li>found the root problem: every decision depended on absolute colours, so any change in lighting broke it;</li>
+        <li>rewrote the pipeline described on this page and labelled the 88 cards in the repo's photos as a test, reaching 88 / 88;</li>
+        <li>degraded those photos on purpose (blur, noise, colour casts, perspective) and fixed what broke;</li>
+        <li>ported it to JavaScript with a test that both versions give identical answers, and built this app;</li>
+        <li>tried it on photos it had never seen, from Nicolas Hahn's <a href="https://github.com/nicolashahn/set-solver">set-solver</a>. The first run got only 88 of 126 cards right, mostly faint stripes read as empty; fixing that, plus shadows, glare and the game box, brought it to 125 / 126.</li>
+      </ol>
+      <p>No model was trained. The restyle, this page and the deployment came the next day, in a follow-up session with Claude Opus 5.5. The full story, with the exact prompts, is in the <a href="https://github.com/jhofman/setgamematch#history">README</a>.</p>
     </section>
 
     <p class="footer-links"><a href="./">Find sets in a photo</a> · <a href="https://github.com/jhofman/setgamematch">Source on GitHub</a><br>

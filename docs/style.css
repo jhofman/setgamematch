@@ -322,3 +322,11 @@ table.codes tbody th { font-weight: 500; }
 table.codes tr.sum th, table.codes tr.sum td { font-weight: 650; border-bottom: 0; border-top: 2px solid var(--border); }
 .footer-links { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 0.875rem; }
 .more { margin: 20px 0 0; font-size: 0.9375rem; }
+
+blockquote {
+  margin: 12px 0; padding: 10px 14px;
+  border-left: 3px solid var(--accent); background: var(--bg-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--mono); font-size: 0.8125rem; line-height: 1.55; color: var(--text);
+}
+.q ol.history { padding-left: 1.3em; }

@@ -3,7 +3,7 @@
  * Online, files always come from the network (and refresh the copy), so a new
  * deploy shows up immediately; the cached copy is only used when offline.
  */
-const CACHE = "set-finder-v4";
+const CACHE = "set-finder-v5";
 const FILES = [
   "./", "index.html", "style.css", "app.js", "setvision.js", "worker.js", "manifest.webmanifest",
   "how.html", "how.js", "how/data.json",
