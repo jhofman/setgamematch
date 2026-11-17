@@ -153,7 +153,7 @@ def shrink(rgb, max_side=WORK_MAX):
     s = max(h, w) / float(max_side)
     if s <= 1:
         return rgb
-    return cv2.resize(rgb, (int(round(w / s)), int(round(h / s))), interpolation=cv2.INTER_AREA)
+    return cv2.resize(rgb, (int(w / s + 0.5), int(h / s + 0.5)), interpolation=cv2.INTER_AREA)
 
 
 def find_card_quads(rgb):
@@ -166,12 +166,12 @@ def find_card_quads(rgb):
     # detection runs on a small copy: fast, and it blurs away the symbols' detail
     s = max(H, W) / 800.0
     s = max(s, 1.0)
-    small = cv2.resize(rgb, (int(round(W / s)), int(round(H / s))), interpolation=cv2.INTER_AREA)
+    small = cv2.resize(rgb, (int(W / s + 0.5), int(H / s + 0.5)), interpolation=cv2.INTER_AREA)
     h, w = small.shape[:2]
     white = small.min(axis=2)
 
     quads = []
-    er = max(1, int(round(max(h, w) / 400.0)))   # erosion radius in pixels
+    er = max(1, int(max(h, w) / 400.0 + 0.5))   # erosion radius in pixels
     # Otsu first; then stricter thresholds in case cards merged with a bright background
     t0 = otsu(white)
     for t in [t0, t0 + (255 - t0) * 0.25, t0 + (255 - t0) * 0.5, t0 - t0 * 0.3]:
@@ -392,7 +392,7 @@ def symbol_features(norm, sig, sym):
     # Colours are averaged before measuring ink so that stripes blend to a
     # tint and pixel noise cancels out.
     edge_ink = max(1.0 - float(rgb.min()), float(rgb.max() - rgb.min()), 1e-6)
-    r = max(2, int(round(0.25 * w)))
+    r = max(2, int(0.25 * w + 0.5))
     core = erode_mask(m, r)
     if core.sum() < 12:
         core = erode_mask(m, max(1, r // 2))
