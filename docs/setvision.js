@@ -290,39 +290,49 @@
   // ---------------------------------------------------------- 1. find cards
   /**
    * Area-averaging resize (like cv2.INTER_AREA when shrinking) of an RGBA image
-   * to w2 x h2. Returns Float32Array of RGB triples.
+   * to w2 x h2. Returns Float32Array of RGB triples. Each source row is squeezed
+   * horizontally into a small buffer and then spread over the output rows it
+   * overlaps, so memory stays small even for a 12-megapixel photo.
    */
   function resizeArea(img, w2, h2) {
     const { data, width: w, height: h } = img;
-    const tmp = new Float32Array(w2 * h * 3);
     const sx = w / w2, sy = h / h2;
+    // horizontal spans: output column x2 covers source columns [x0, x1] with
+    // partial weights at the two ends
+    const x0 = new Int32Array(w2), x1 = new Int32Array(w2);
+    const wl = new Float32Array(w2), wr = new Float32Array(w2);
     for (let x2 = 0; x2 < w2; x2++) {
       const a = x2 * sx, b = Math.min(w, (x2 + 1) * sx);
-      const i0 = Math.floor(a), i1 = Math.min(w - 1, Math.ceil(b) - 1);
-      for (let y = 0; y < h; y++) {
-        let r = 0, g = 0, bl = 0;
-        for (let i = i0; i <= i1; i++) {
-          const wt = Math.min(b, i + 1) - Math.max(a, i);
-          const p = (y * w + i) * 4;
-          r += wt * data[p]; g += wt * data[p + 1]; bl += wt * data[p + 2];
-        }
-        const o = (y * w2 + x2) * 3;
-        tmp[o] = r / (b - a); tmp[o + 1] = g / (b - a); tmp[o + 2] = bl / (b - a);
-      }
+      x0[x2] = Math.floor(a);
+      x1[x2] = Math.min(w - 1, Math.ceil(b) - 1);
+      wl[x2] = Math.min(b, x0[x2] + 1) - a;
+      wr[x2] = x1[x2] > x0[x2] ? b - x1[x2] : 0;
     }
     const out = new Float32Array(w2 * h2 * 3);
-    for (let y2 = 0; y2 < h2; y2++) {
-      const a = y2 * sy, b = Math.min(h, (y2 + 1) * sy);
-      const j0 = Math.floor(a), j1 = Math.min(h - 1, Math.ceil(b) - 1);
-      for (let x = 0; x < w2; x++) {
-        let r = 0, g = 0, bl = 0;
-        for (let j = j0; j <= j1; j++) {
-          const wt = Math.min(b, j + 1) - Math.max(a, j);
-          const p = (j * w2 + x) * 3;
-          r += wt * tmp[p]; g += wt * tmp[p + 1]; bl += wt * tmp[p + 2];
+    const row = new Float32Array(w2 * 3);
+    const inv = 1 / (sx * sy);
+    for (let y = 0; y < h; y++) {
+      const base = y * w * 4;
+      for (let x2 = 0; x2 < w2; x2++) {
+        let p = base + x0[x2] * 4;
+        let r = wl[x2] * data[p], g = wl[x2] * data[p + 1], bl = wl[x2] * data[p + 2];
+        for (let i = x0[x2] + 1; i < x1[x2]; i++) {
+          p += 4;
+          r += data[p]; g += data[p + 1]; bl += data[p + 2];
         }
-        const o = (y2 * w2 + x) * 3;
-        out[o] = r / (b - a); out[o + 1] = g / (b - a); out[o + 2] = bl / (b - a);
+        if (x1[x2] > x0[x2]) {
+          p = base + x1[x2] * 4;
+          r += wr[x2] * data[p]; g += wr[x2] * data[p + 1]; bl += wr[x2] * data[p + 2];
+        }
+        row[x2 * 3] = r; row[x2 * 3 + 1] = g; row[x2 * 3 + 2] = bl;
+      }
+      // output rows that this source row overlaps
+      const first = Math.min(h2 - 1, Math.floor(y / sy)), last = Math.min(h2 - 1, Math.floor((y + 1) / sy));
+      for (let y2 = first; y2 <= last; y2++) {
+        const wt = (Math.min(y + 1, (y2 + 1) * sy) - Math.max(y, y2 * sy)) * inv;
+        if (wt <= 0) continue;
+        const o = y2 * w2 * 3;
+        for (let k = 0; k < w2 * 3; k++) out[o + k] += wt * row[k];
       }
     }
     return out;

@@ -46,14 +46,17 @@ def main():
     # a few degraded boards too, where the two are most likely to drift apart
     for t in ["rotate 17", "blur 3", "noise sd12", "480 px", "perspective", "light gradient"]:
         items += [(k, v, t) for k, v in boards.items()]
-    # any extra photos named on the command line are compared too (no labels needed)
+    # any extra photos named on the command line are compared too, at full
+    # resolution (no labels needed)
     items += [(os.path.abspath(p), None, None) for p in sys.argv[1:]]
 
     cards_total = disagreements = js_wrong = 0
     worst = dict(hue=0.0, fill=0.0, solidity=0.0, extent=0.0, stripe=0.0)
     slowest = 0
     for name, truth, t in items:
-        rgb = sv.shrink(sv.load_image(os.path.join(ROOT, name)))
+        rgb = sv.load_image(os.path.join(ROOT, name))
+        if truth is not None:
+            rgb = sv.shrink(rgb)      # extra photos go in at full size, to exercise the JS resize
         if t:
             rgb = sv.shrink(np.ascontiguousarray(stress.TRANSFORMS[t](rgb)))
         py = sv.detect_cards(rgb)

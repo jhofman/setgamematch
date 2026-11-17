@@ -39,8 +39,8 @@ header {
   justify-content: space-between;
   gap: 12px;
   padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
-  background: var(--accent);
-  color: var(--accent-text);
+  background: #5b3daa;      /* same in light and dark: it matches the app icon and theme-color */
+  color: #fff;
   position: sticky;
   top: 0;
   z-index: 5;

@@ -8,10 +8,13 @@
   // outline colours for the sets (chosen to stay distinct on a photo)
   const SET_COLORS = ["#f4821f", "#19a974", "#3d8bfd", "#e0399f", "#c9a400", "#00b8c4", "#8a63f6", "#d9483b"];
 
+  const SHOW_MAX = 1600;   // longest side of the photo as displayed
+  const FULL_MAX = 4096;   // longest side handed to the detector (canvas size limits on phones)
+
   const state = { cards: [], sets: [], selected: null, image: null };
 
   // ---------------------------------------------------------- card drawings
-  /** Outline of a squiggle in a 40 x 80 box (same curve as tests/make_icons.py). */
+  /** Outline of a squiggle in a 40 x 80 box (same curve as tests/make_assets.py). */
   const SQUIGGLE = (function () {
     const n = 48, amp = 6.5, r = 11.5, left = [], right = [];
     for (let i = 0; i <= n; i++) {
@@ -210,10 +213,13 @@
   let worker = null;
   let job = 0;
 
-  /** Run the detector off the main thread when possible. */
-  function detect(imageData) {
+  /**
+   * Run the detector, off the main thread when possible. `getPixels` returns a
+   * fresh ImageData each time it is called (the buffer is handed to the worker).
+   */
+  function detect(getPixels) {
     return new Promise((resolve) => {
-      const fallback = () => resolve(SV.detectCards(imageData));
+      const fallback = () => resolve(SV.detectCards(getPixels()));
       try {
         if (!worker) worker = new Worker("worker.js");
       } catch (err) {
@@ -227,9 +233,8 @@
       };
       worker.addEventListener("message", onMessage);
       worker.onerror = () => { worker = null; fallback(); };
-      // send a copy: the page keeps its own pixels for drawing
-      const copy = new Uint8ClampedArray(imageData.data);
-      worker.postMessage({ id, data: copy, width: imageData.width, height: imageData.height }, [copy.buffer]);
+      const pixels = getPixels();
+      worker.postMessage({ id, data: pixels.data, width: pixels.width, height: pixels.height }, [pixels.data.buffer]);
     });
   }
 
@@ -259,15 +264,31 @@
     try {
       const bitmap = await loadBitmap(source);
       const bw = bitmap.width || bitmap.naturalWidth, bh = bitmap.height || bitmap.naturalHeight;
-      const s = Math.min(1, SV.WORK_MAX / Math.max(bw, bh));
-      photo.width = Math.round(bw * s);
-      photo.height = Math.round(bh * s);
+
+      // what you see: a modest copy of the photo
+      const shown = Math.min(1, SHOW_MAX / Math.max(bw, bh));
+      photo.width = Math.round(bw * shown);
+      photo.height = Math.round(bh * shown);
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(bitmap, 0, 0, photo.width, photo.height);
-      if (bitmap.close) bitmap.close();
       state.image = ctx.getImageData(0, 0, photo.width, photo.height);
       window.scrollTo(0, 0);
-      state.cards = await detect(state.image);
+
+      // what the detector sees: the photo's own pixels (it does its own, more
+      // careful, shrinking; a browser's quick resize can smear fine stripes)
+      const full = Math.min(1, FULL_MAX / Math.max(bw, bh));
+      const big = document.createElement("canvas");
+      big.width = Math.round(bw * full);
+      big.height = Math.round(bh * full);
+      const bigCtx = big.getContext("2d", { willReadFrequently: true });
+      bigCtx.imageSmoothingQuality = "high";
+      bigCtx.drawImage(bitmap, 0, 0, big.width, big.height);
+      if (bitmap.close) bitmap.close();
+      const cards = await detect(() => bigCtx.getImageData(0, 0, big.width, big.height));
+      const k = photo.width / big.width;
+      for (const card of cards) card.quad = card.quad.map((p) => [p[0] * k, p[1] * k]);
+      big.width = big.height = 0;      // release the memory promptly
+      state.cards = cards;
       render();
     } catch (err) {
       $("summary").innerHTML = "Could not read that photo<small>" + String(err.message || err) + "</small>";
