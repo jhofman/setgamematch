@@ -5,7 +5,7 @@ Check that the JavaScript port (docs/setvision.js) agrees with setvision.py.
 Every test image is shrunk in Python, handed to both implementations as raw
 pixels, and the results are compared card by card. Needs `node` on the PATH.
 
-  python tests/js_parity.py
+  python tests/js_parity.py [more photos ...]
 """
 import glob
 import json
@@ -46,9 +46,11 @@ def main():
     # a few degraded boards too, where the two are most likely to drift apart
     for t in ["rotate 17", "blur 3", "noise sd12", "480 px", "perspective", "light gradient"]:
         items += [(k, v, t) for k, v in boards.items()]
+    # any extra photos named on the command line are compared too (no labels needed)
+    items += [(os.path.abspath(p), None, None) for p in sys.argv[1:]]
 
     cards_total = disagreements = js_wrong = 0
-    worst = dict(hue=0.0, fill=0.0, solidity=0.0, extent=0.0)
+    worst = dict(hue=0.0, fill=0.0, solidity=0.0, extent=0.0, stripe=0.0)
     slowest = 0
     for name, truth, t in items:
         rgb = sv.shrink(sv.load_image(os.path.join(ROOT, name)))
@@ -73,7 +75,7 @@ def main():
                 if k == "hue":
                     d = min(d, 360 - d)
                 worst[k] = max(worst[k], d)
-        if not t:
+        if truth and not t:
             js_wrong += sum(1 for x, b in zip(truth, js) if x != ev.describe(b))
     print("\n%d cards compared, %d disagreements; js wrong on %d labelled cards; slowest image %d ms in node" % (
         cards_total, disagreements, js_wrong, slowest))

@@ -18,6 +18,7 @@ port of this file used by the static website):
 """
 
 import itertools
+import math
 
 import cv2
 import numpy as np
@@ -27,7 +28,7 @@ COLORS = ["red", "green", "purple"]
 SHADINGS = ["open", "striped", "solid"]
 SHAPES = ["diamond", "oval", "squiggle"]
 
-WORK_MAX = 1600      # longest side of the working image
+WORK_MAX = 2400      # longest side of the working image
 CARD_W, CARD_H = 300, 200   # canonical card size
 MARGIN = 8           # pixels ignored around the edge of a warped card
 
@@ -297,9 +298,11 @@ def normalise(card):
     flat = np.array([np.percentile(card[:, :, c][inner], 75) for c in range(3)], dtype=np.float32)
     norm = card / np.maximum(flat, 1.0)
     for _ in range(2):
-        ink = 1.0 - norm.min(axis=2)
-        chroma = norm.max(axis=2) - norm.min(axis=2)
-        use = inner & (ink < 0.12) & (chroma < 0.10)
+        # background = colourless and not too dark (a shadow is colourless too,
+        # and should be treated as background, not ink)
+        mx = np.maximum(norm.max(axis=2), 1e-6)
+        mn = norm.min(axis=2)
+        use = inner & (1.0 - mn / mx < 0.10) & (mn > 0.4)
         if use.sum() < 0.2 * inner.sum():
             break
         bg = fit_background(card, use)
@@ -319,16 +322,24 @@ def fill_holes(mask):
     return (labels[1:-1, 1:-1] != labels[0, 0]).astype(np.uint8)
 
 
-def find_symbols(norm):
+def find_symbols(norm, faint=False):
     """
-    Returns (list of symbols, ink map). Each symbol is a dict with the filled
-    mask restricted to its bounding box.
+    Returns (symbols, ink map, ink mask). Each symbol is a dict with the
+    filled mask restricted to its bounding box. With faint=True the ink
+    threshold is lowered to pick up symbols washed out by glare, at the cost
+    of rougher outlines.
     """
     H, W = norm.shape[:2]
-    ink = np.clip(1.0 - norm.min(axis=2), 0, 1)
-    chroma = np.clip(norm.max(axis=2) - norm.min(axis=2), 0, 1)
-    # signal: coloured or dark relative to the card's white
-    sig = np.maximum(ink, chroma)
+    # Signal: how far each pixel's weakest channel falls below the local
+    # white level. The white level is a grey-scale closing of the brightest
+    # channel: it bridges thin outlines and stripes (so those register as dark
+    # ink) but follows large areas, so inside a solid symbol the signal is the
+    # colour's saturation, and a shadow lying across the card, being
+    # colourless, gives no signal at all.
+    k3 = np.ones((3, 3), np.uint8)
+    brightest = norm.max(axis=2)
+    level = cv2.erode(cv2.dilate(brightest, k3, iterations=7), k3, iterations=7)
+    sig = np.clip(1.0 - norm.min(axis=2) / np.maximum(level, 1e-6), 0, 1)
     sig[:MARGIN], sig[-MARGIN:], sig[:, :MARGIN], sig[:, -MARGIN:] = 0, 0, 0, 0
 
     # the mask is made from a lightly smoothed copy so that sensor noise and
@@ -336,8 +347,12 @@ def find_symbols(norm):
     smooth = cv2.blur(sig, (3, 3), borderType=cv2.BORDER_REPLICATE)
     strong = np.percentile(smooth, 99.5)
     thr = max(0.07, 0.30 * strong)
+    if faint:
+        # just above the card's own noise floor
+        inner = smooth[MARGIN:H - MARGIN, MARGIN:W - MARGIN]
+        q10, q50 = np.percentile(inner, [10, 50])
+        thr = min(thr, max(0.05, q50 + 6.0 * (q50 - q10)))
     mask = (smooth > thr).astype(np.uint8)
-    k3 = np.ones((3, 3), np.uint8)
     # close 1-pixel gaps in thin outlines, fill, then shave off anything thin
     closed = cv2.erode(cv2.dilate(mask, k3), k3)
     filled = fill_holes(closed)
@@ -356,7 +371,7 @@ def find_symbols(norm):
         symbols.append(dict(x=int(x0), y=int(y0), w=int(bw), h=int(bh), area=int(area),
                             mask=(labels[y0:y0 + bh, x0:x0 + bw] == i)))
     symbols.sort(key=lambda s: s["x"])
-    return symbols, sig
+    return symbols, sig, mask
 
 
 # --------------------------------------------------------------------------
@@ -375,11 +390,29 @@ def rgb_to_hue(r, g, b):
     return 60.0 * h
 
 
+def ink_of(rgb):
+    """How far a (normalised) colour is from the card's white: dark or coloured."""
+    return max(1.0 - float(min(rgb)), float(max(rgb) - min(rgb)))
+
+
 def symbol_features(norm, sig, sym):
     x, y, w, h = sym["x"], sym["y"], sym["w"], sym["h"]
     m = sym["mask"]
     s = sig[y:y + h, x:x + w]
-    px = norm[y:y + h, x:x + w]
+
+    # What white looks like right here: a ring just outside the symbol. All
+    # colours below are taken relative to it, which cancels shadows and
+    # whatever the card-wide background fit got wrong.
+    H, W = sig.shape
+    pad = 7
+    X0, Y0, X1, Y1 = max(x - pad, 0), max(y - pad, 0), min(x + w + pad, W), min(y + h + pad, H)
+    big = np.zeros((Y1 - Y0, X1 - X0), np.uint8)
+    big[y - Y0:y - Y0 + h, x - X0:x - X0 + w] = m
+    k3 = np.ones((3, 3), np.uint8)
+    near = cv2.dilate(big, k3, iterations=3)
+    ring = (cv2.dilate(near, k3, iterations=3) > 0) & (near == 0)
+    white = norm[Y0:Y1, X0:X1][ring].mean(axis=0) if ring.sum() >= 20 else np.ones(3)
+    px = norm[y:y + h, x:x + w] / np.maximum(white, 1e-3)
 
     # --- colour: mean of the strongest ink
     vals = s[m]
@@ -389,18 +422,28 @@ def symbol_features(norm, sig, sym):
     hue = rgb_to_hue(*rgb)
 
     # --- shading: how inked is the inside, relative to the outline itself?
-    # Colours are averaged before measuring ink so that stripes blend to a
-    # tint and pixel noise cancels out.
-    edge_ink = max(1.0 - float(rgb.min()), float(rgb.max() - rgb.min()), 1e-6)
+    edge_ink = max(ink_of(rgb), 1e-6)
     r = max(2, int(0.25 * w + 0.5))
     core = erode_mask(m, r)
     if core.sum() < 12:
         core = erode_mask(m, max(1, r // 2))
-    if core.any():
-        c = px[core].mean(axis=0)
-        fill = max(1.0 - float(c.min()), float(c.max() - c.min())) / edge_ink
-    else:
-        fill = 0.0
+    # Stripes run across the symbol, i.e. along the rows of the warped card,
+    # so average each row of the core separately (averaging colours before
+    # measuring ink lets pixel noise cancel) and look at the inkiest rows.
+    # Stripes too fine to resolve still show up as an overall tint.
+    profile = []
+    for row in range(h):
+        sel = core[row]
+        if sel.sum() >= 3:
+            profile.append(ink_of(px[row][sel].mean(axis=0)))
+    stripe = stripe_score(profile)
+    inside = ink_of(px[core].mean(axis=0)) if core.any() else 0.0
+    if len(profile) >= 5:
+        # resolved stripes are mostly gaps, so their average ink is small:
+        # go by the inkiest rows instead, to the extent the rows really do
+        # alternate (so that noise on a blank interior is not promoted)
+        inside += stripe * max(float(np.percentile(profile, 80)) - inside, 0.0)
+    fill = inside / edge_ink
 
     # --- shape
     ys, xs = np.nonzero(m)
@@ -410,7 +453,29 @@ def symbol_features(norm, sig, sym):
     solidity = area / max(polygon_area(hull), 1.0)
     extent = area / float(w * h)
     return dict(hue=hue, rgb=[float(v) for v in rgb], fill=fill, solidity=solidity, extent=extent,
-                edge=edge_ink)
+                edge=edge_ink, stripe=stripe)
+
+
+def stripe_score(profile):
+    """
+    How periodic the ink is from row to row inside a symbol, from 0 (not at
+    all) towards 1 (clean stripes): the strongest autocorrelation of the
+    profile, after removing its slow trend, at a lag of 3 to 10 rows.
+    """
+    n = len(profile)
+    if n < 24:
+        return 0.0
+    p = np.asarray(profile, dtype=np.float64)
+    half = 4
+    trend = np.array([p[max(0, i - half):i + half + 1].mean() for i in range(n)])
+    d = (p - trend)[half:n - half]
+    var = float(np.dot(d, d))
+    if var < 1e-12:
+        return 0.0
+    best = 0.0
+    for lag in range(3, 11):
+        best = max(best, float(np.dot(d[:-lag], d[lag:])) / var)
+    return best
 
 
 def erode_mask(mask, r):
@@ -426,8 +491,12 @@ def classify_color(hue):
     return "purple"
 
 
-def classify_shading(fill):
-    if fill < 0.13:
+def classify_shading(fill, stripe=0.0):
+    if fill < 0.10:
+        return "open"
+    if fill < 0.20 and stripe < 0.36:
+        # a little ink inside but no rhythm to it: glare or noise on an open
+        # symbol, rather than stripes faded by glare
         return "open"
     if fill < 0.84:
         return "striped"
@@ -441,13 +510,17 @@ SHAPE_SCALE = (0.07, 0.05)
 
 def classify_shape(solidity, extent):
     """Nearest prototype in (extent, solidity) space."""
-    best, best_d = None, None
-    for name in SHAPES:
-        e, so = SHAPE_PROTOTYPES[name]
-        d = ((extent - e) / SHAPE_SCALE[0]) ** 2 + ((solidity - so) / SHAPE_SCALE[1]) ** 2
-        if best_d is None or d < best_d:
-            best, best_d = name, d
-    return best
+    return min(SHAPES, key=lambda name: _shape_d(name, solidity, extent))
+
+
+def _shape_d(name, solidity, extent):
+    e, so = SHAPE_PROTOTYPES[name]
+    return ((extent - e) / SHAPE_SCALE[0]) ** 2 + ((solidity - so) / SHAPE_SCALE[1]) ** 2
+
+
+def shape_distance(solidity, extent):
+    """How unlike any Set symbol the shape is (0 = textbook)."""
+    return min(_shape_d(name, solidity, extent) for name in SHAPES)
 
 
 def border_whiteness(sig):
@@ -475,10 +548,44 @@ def read_card(rgb, quad):
     return card
 
 
+# Symbols sit in fixed slots: one in the middle, two either side of the
+# middle, or three a full pitch apart. PITCH is the slot spacing (fraction of
+# the card's long side).
+PITCH = 0.283
+
+
+def number_from_slots(symbols):
+    """
+    The number on the card judged by *where* the symbols are, which still
+    works when glare has wiped one out. Returns (number, worst misfit in
+    pitches), or (None, misfit) if the positions fit no layout.
+    """
+    d = [((s["x"] + s["w"] / 2.0) / CARD_W - 0.5) / PITCH for s in symbols]
+    odd = max(abs(v - math.floor(v + 0.5)) for v in d)            # slots at -1, 0, 1
+    even = max(abs(abs(v) - 0.5) for v in d)                      # slots at -0.5, 0.5
+    if even < odd:
+        return (2, even) if len(symbols) <= 2 else (None, even)
+    if max(abs(v) for v in d) > 1.5:
+        return None, odd
+    if any(abs(v) > 0.5 for v in d):
+        return 3, odd
+    return (1, odd) if len(symbols) == 1 else (None, odd)
+
+
+def stray_ink(mask, symbols):
+    """Fraction of the card covered by ink that is not part of a symbol."""
+    m = mask.copy()
+    for s in symbols:
+        m[max(s["y"] - 4, 0):s["y"] + s["h"] + 4, max(s["x"] - 4, 0):s["x"] + s["w"] + 4] = 0
+    return float(m.sum()) / m.size
+
+
 def read_card_oriented(rgb, q):
     card = warp_card(rgb, q)
     norm = normalise(card)
-    symbols, sig = find_symbols(norm)
+    symbols, sig, mask = find_symbols(norm)
+    if not symbols:
+        symbols, sig, mask = find_symbols(norm, faint=True)
     if not symbols:
         return None
     if border_whiteness(sig) < 0.85:
@@ -493,17 +600,26 @@ def read_card_oriented(rgb, q):
     # average the features over the symbols (hue on the circle)
     ang = np.deg2rad([f["hue"] for f in feats])
     hue = float(np.rad2deg(np.arctan2(np.sin(ang).mean(), np.cos(ang).mean())) % 360)
-    fill = float(np.median([f["fill"] for f in feats]))
+    # glare can only wash ink out, so the most inked symbol is the best witness
+    fill = float(max(f["fill"] for f in feats))
+    stripe = float(max(f["stripe"] for f in feats))
     solidity = float(np.median([f["solidity"] for f in feats]))
     extent = float(np.median([f["extent"] for f in feats]))
+    number, misfit = number_from_slots(symbols)
+    stray = stray_ink(mask, symbols)
+    # things that are white and rectangular but not Set cards (the box, the
+    # back of the deck, a phone) fail at least one of these
+    if number is None or misfit > 0.3 or stray > 0.07 or shape_distance(solidity, extent) > 12:
+        return None
     return dict(
         quad=[[float(x), float(y)] for x, y in q],
-        number=len(symbols),
+        number=number,
         color=classify_color(hue),
-        shading=classify_shading(fill),
+        shading=classify_shading(fill, stripe),
         shape=classify_shape(solidity, extent),
-        features=dict(hue=hue, fill=fill, solidity=solidity, extent=extent),
-        _debug=dict(card=card, norm=norm, sig=sig, symbols=symbols),
+        features=dict(hue=hue, fill=fill, solidity=solidity, extent=extent, stripe=stripe),
+        _debug=dict(card=card, norm=norm, sig=sig, symbols=symbols, misfit=misfit, stray=stray,
+                    slots=number, count=len(symbols), shape_d=shape_distance(solidity, extent)),
     )
 
 

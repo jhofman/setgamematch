@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Set Finder</title>
+  <meta name="description" content="Point your camera at a board of Set cards and see every set on it.">
+  <meta name="theme-color" content="#5b3daa">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Set Finder">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- stripe patterns shared by every card drawing on the page -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <pattern id="stripe-red" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#e5352b"/></pattern>
+      <pattern id="stripe-green" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#1a9e4b"/></pattern>
+      <pattern id="stripe-purple" width="4" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="1.7" fill="#6a3fa0"/></pattern>
+    </defs>
+  </svg>
+
+  <header>
+    <h1>Set Finder</h1>
+    <button id="again" class="ghost" hidden>New photo</button>
+  </header>
+
+  <main>
+    <section id="start">
+      <p class="lead">Take a photo of the cards on the table and see every set.</p>
+      <div class="actions">
+        <label class="button primary">
+          <input id="camera" type="file" accept="image/*" capture="environment" hidden>
+          Take photo
+        </label>
+        <label class="button">
+          <input id="library" type="file" accept="image/*" hidden>
+          Choose a photo
+        </label>
+      </div>
+      <button id="sample" class="link">Try a sample board</button>
+      <ul class="tips">
+        <li>Lay the cards on a darker, plain surface, not touching each other.</li>
+        <li>Keep every card fully in the frame; any angle or rotation is fine.</li>
+        <li>Avoid strong glare on the cards.</li>
+      </ul>
+    </section>
+
+    <section id="result" hidden>
+      <div id="stage">
+        <canvas id="photo"></canvas>
+        <div id="busy" hidden><span class="spinner"></span>Looking for cards…</div>
+      </div>
+      <p id="summary" role="status"></p>
+      <div id="sets"></div>
+      <h2 id="cards-title" hidden>Cards <small>tap one to correct it</small></h2>
+      <div id="cards"></div>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form method="dialog">
+      <div id="editor-preview"></div>
+      <div id="editor-fields"></div>
+      <div class="dialog-actions">
+        <button type="button" id="editor-remove" class="danger">Not a card</button>
+        <button type="submit" class="primary">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="setvision.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

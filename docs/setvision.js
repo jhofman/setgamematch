@@ -19,7 +19,7 @@
   const SHADINGS = ["open", "striped", "solid"];
   const SHAPES = ["diamond", "oval", "squiggle"];
 
-  const WORK_MAX = 1600;
+  const WORK_MAX = 2400;
   const CARD_W = 300, CARD_H = 200;
   const MARGIN = 8;
 
@@ -117,27 +117,30 @@
     return poly;
   }
 
-  /** 3x3 erosion (or dilation) of a 0/1 mask; pixels outside the image take `outside`. */
+  /**
+   * 3x3 erosion (or dilation) of a 0/1 mask, as a horizontal pass then a vertical
+   * one. Pixels outside the image take the value `outside`, or are ignored if null.
+   */
   function morph(mask, w, h, isErode, iterations, outside) {
+    // erosion is an AND over the neighbourhood, dilation an OR; a pixel
+    // outside the image is neutral unless a value was given for it
+    const edge = outside === null ? (isErode ? 1 : 0) : (outside ? 1 : 0);
     let src = mask;
+    const tmp = new Uint8Array(w * h);
     for (let it = 0; it < iterations; it++) {
       const dst = new Uint8Array(w * h);
       for (let y = 0; y < h; y++) {
+        const row = y * w;
         for (let x = 0; x < w; x++) {
-          let v = isErode ? 1 : 0;
-          for (let dy = -1; dy <= 1 && v === (isErode ? 1 : 0); dy++) {
-            const yy = y + dy;
-            for (let dx = -1; dx <= 1; dx++) {
-              const xx = x + dx;
-              let p;
-              if (yy < 0 || yy >= h || xx < 0 || xx >= w) {
-                if (outside === null) continue;      // ignore pixels outside
-                p = outside;
-              } else p = src[yy * w + xx];
-              if (isErode ? p === 0 : p !== 0) { v = isErode ? 0 : 1; break; }
-            }
-          }
-          dst[y * w + x] = v;
+          const l = x > 0 ? src[row + x - 1] : edge, r = x < w - 1 ? src[row + x + 1] : edge;
+          tmp[row + x] = isErode ? src[row + x] & l & r : src[row + x] | l | r;
+        }
+      }
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          const u = y > 0 ? tmp[row - w + x] : edge, d = y < h - 1 ? tmp[row + w + x] : edge;
+          dst[row + x] = isErode ? tmp[row + x] & u & d : tmp[row + x] | u | d;
         }
       }
       src = dst;
@@ -146,6 +149,36 @@
   }
   const erode = (m, w, h, n, outside = null) => morph(m, w, h, true, n, outside);
   const dilate = (m, w, h, n, outside = null) => morph(m, w, h, false, n, outside);
+
+  /** Grey-scale 3x3 erosion (min) or dilation (max) of a Float32Array, ignoring pixels outside. */
+  function greyMorph(src, w, h, isErode, iterations) {
+    const pick = isErode ? Math.min : Math.max;
+    let a = src;
+    const tmp = new Float32Array(w * h);
+    for (let it = 0; it < iterations; it++) {
+      const dst = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          let v = a[row + x];
+          if (x > 0) v = pick(v, a[row + x - 1]);
+          if (x < w - 1) v = pick(v, a[row + x + 1]);
+          tmp[row + x] = v;
+        }
+      }
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          let v = tmp[row + x];
+          if (y > 0) v = pick(v, tmp[row - w + x]);
+          if (y < h - 1) v = pick(v, tmp[row + w + x]);
+          dst[row + x] = v;
+        }
+      }
+      a = dst;
+    }
+    return a;
+  }
 
   /**
    * Connected components of a 0/1 mask. Returns {labels (Int32Array, 0 = background),
@@ -202,12 +235,31 @@
     return pts;
   }
 
-  /** numpy-style percentile (linear interpolation) of a Float32Array; sorts it in place. */
+  /** Move the k-th smallest value of a[lo..hi] to position k (quickselect, in place). */
+  function selectKth(a, k) {
+    let lo = 0, hi = a.length - 1;
+    while (lo < hi) {
+      const pivot = a[(lo + hi) >> 1];
+      let i = lo, j = hi;
+      while (i <= j) {
+        while (a[i] < pivot) i++;
+        while (a[j] > pivot) j--;
+        if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+      }
+      if (k <= j) hi = j; else if (k >= i) lo = i; else return;
+    }
+  }
+
+  /** numpy-style percentile (linear interpolation) of a Float32Array; reorders it in place. */
   function percentile(values, p) {
-    values.sort();
-    const pos = (p / 100) * (values.length - 1);
-    const lo = Math.floor(pos), hi = Math.min(values.length - 1, lo + 1);
-    return values[lo] + (values[hi] - values[lo]) * (pos - lo);
+    const n = values.length;
+    const pos = (p / 100) * (n - 1);
+    const lo = Math.floor(pos);
+    selectKth(values, lo);
+    if (lo + 1 >= n) return values[lo];
+    let next = Infinity;                       // the following order statistic
+    for (let i = lo + 1; i < n; i++) if (values[i] < next) next = values[i];
+    return values[lo] + (next - values[lo]) * (pos - lo);
   }
 
   /** Solve A x = b in place (Gaussian elimination with partial pivoting). A is n x n as array of rows. */
@@ -482,8 +534,9 @@
         for (let x = MARGIN; x < CARD_W - MARGIN; x++) {
           const i = y * CARD_W + x;
           const r = norm[i * 3], g = norm[i * 3 + 1], b = norm[i * 3 + 2];
-          const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
-          if (1 - mn < 0.12 && mx - mn < 0.10) { use[i] = 1; count++; }
+          // background = colourless and not too dark (so a shadow counts as background)
+          const mn = Math.min(r, g, b), mx = Math.max(r, g, b, 1e-6);
+          if (1 - mn / mx < 0.10 && mn > 0.4) { use[i] = 1; count++; }
         }
       }
       if (count < 0.2 * innerCount) break;
@@ -513,16 +566,28 @@
     return out;
   }
 
-  /** Returns {symbols, sig}. Each symbol has x, y, w, h, area and a mask over its bounding box. */
-  function findSymbols(norm) {
+  /**
+   * Returns {symbols, sig, mask}. Each symbol has x, y, w, h, area and a mask over
+   * its bounding box. With faint = true the ink threshold is lowered to pick up
+   * symbols washed out by glare, at the cost of rougher outlines.
+   */
+  function findSymbols(norm, faint) {
+    // Signal: how far each pixel's weakest channel falls below the local white
+    // level (a grey-scale closing of the brightest channel). Thin outlines and
+    // stripes register as dark ink, the inside of a solid symbol registers by
+    // its saturation, and a colourless shadow across the card does not register.
+    const brightest = new Float32Array(N), weakest = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const r = norm[i * 3], g = norm[i * 3 + 1], b = norm[i * 3 + 2];
+      brightest[i] = Math.max(r, g, b);
+      weakest[i] = Math.min(r, g, b);
+    }
+    const level = greyMorph(greyMorph(brightest, CARD_W, CARD_H, false, 7), CARD_W, CARD_H, true, 7);
     const sig = new Float32Array(N);
     for (let y = MARGIN; y < CARD_H - MARGIN; y++) {
       for (let x = MARGIN; x < CARD_W - MARGIN; x++) {
         const i = y * CARD_W + x;
-        const r = norm[i * 3], g = norm[i * 3 + 1], b = norm[i * 3 + 2];
-        const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
-        const ink = Math.min(Math.max(1 - mn, 0), 1), chroma = Math.min(Math.max(mx - mn, 0), 1);
-        sig[i] = Math.max(ink, chroma);
+        sig[i] = Math.min(Math.max(1 - weakest[i] / Math.max(level[i], 1e-6), 0), 1);
       }
     }
     // 3x3 box blur with replicated border
@@ -538,7 +603,16 @@
       }
     }
     const strong = percentile(Float32Array.from(smooth), 99.5);
-    const thr = Math.max(0.07, 0.30 * strong);
+    let thr = Math.max(0.07, 0.30 * strong);
+    if (faint) {
+      // just above the card's own noise floor
+      const inner = new Float32Array((CARD_W - 2 * MARGIN) * (CARD_H - 2 * MARGIN));
+      let n = 0;
+      for (let y = MARGIN; y < CARD_H - MARGIN; y++)
+        for (let x = MARGIN; x < CARD_W - MARGIN; x++) inner[n++] = smooth[y * CARD_W + x];
+      const q10 = percentile(inner, 10), q50 = percentile(inner, 50);
+      thr = Math.min(thr, Math.max(0.05, q50 + 6 * (q50 - q10)));
+    }
     const mask = new Uint8Array(N);
     for (let i = 0; i < N; i++) mask[i] = smooth[i] > thr ? 1 : 0;
     const closed = erode(dilate(mask, CARD_W, CARD_H, 1), CARD_W, CARD_H, 1);
@@ -557,7 +631,7 @@
       symbols.push({ x: st.x, y: st.y, w: st.w, h: st.h, area: st.area, mask: m });
     });
     symbols.sort((a, b) => a.x - b.x);
-    return { symbols, sig };
+    return { symbols, sig, mask };
   }
 
   // ---------------------------------------------------------- 5. attributes
@@ -571,11 +645,57 @@
     return 60 * h;
   }
 
+  /** How far a (normalised) colour is from the card's white: dark or coloured. */
   const inkOf = (r, g, b) => Math.max(1 - Math.min(r, g, b), Math.max(r, g, b) - Math.min(r, g, b));
+
+  /** Periodicity of the row-to-row ink profile inside a symbol: 0 (none) towards 1 (clean stripes). */
+  function stripeScore(profile) {
+    const n = profile.length;
+    if (n < 24) return 0;
+    const half = 4, d = [];
+    for (let i = half; i < n - half; i++) {
+      let s = 0;
+      for (let j = i - half; j <= i + half; j++) s += profile[j];
+      d.push(profile[i] - s / (2 * half + 1));
+    }
+    let v = 0;
+    for (const x of d) v += x * x;
+    if (v < 1e-12) return 0;
+    let best = 0;
+    for (let lag = 3; lag <= 10; lag++) {
+      let s = 0;
+      for (let i = 0; i + lag < d.length; i++) s += d[i] * d[i + lag];
+      best = Math.max(best, s / v);
+    }
+    return best;
+  }
 
   function symbolFeatures(norm, sig, sym) {
     const { x, y, w, h, mask: m } = sym;
     const at = (cx, cy) => (y + cy) * CARD_W + x + cx;
+
+    // What white looks like right here: a ring just outside the symbol. All
+    // colours below are relative to it, which cancels shadows and whatever
+    // the card-wide background fit got wrong.
+    const pad = 7;
+    const X0 = Math.max(x - pad, 0), Y0 = Math.max(y - pad, 0);
+    const X1 = Math.min(x + w + pad, CARD_W), Y1 = Math.min(y + h + pad, CARD_H);
+    const bw = X1 - X0, bh = Y1 - Y0;
+    const big = new Uint8Array(bw * bh);
+    for (let cy = 0; cy < h; cy++)
+      for (let cx = 0; cx < w; cx++) big[(y - Y0 + cy) * bw + (x - X0 + cx)] = m[cy * w + cx];
+    const near = dilate(big, bw, bh, 3), far = dilate(near, bw, bh, 3);
+    const white = [0, 0, 0];
+    let ringCount = 0;
+    for (let cy = 0; cy < bh; cy++) {
+      for (let cx = 0; cx < bw; cx++) {
+        if (!far[cy * bw + cx] || near[cy * bw + cx]) continue;
+        const i = ((Y0 + cy) * CARD_W + X0 + cx) * 3;
+        white[0] += norm[i]; white[1] += norm[i + 1]; white[2] += norm[i + 2];
+        ringCount++;
+      }
+    }
+    for (let c = 0; c < 3; c++) white[c] = ringCount >= 20 ? Math.max(white[c] / ringCount, 1e-3) : 1;
 
     // colour: mean of the strongest ink
     const vals = new Float32Array(sym.area);
@@ -590,34 +710,45 @@
         if (m[cy * w + cx] && sig[i] >= top) { r += norm[i * 3]; g += norm[i * 3 + 1]; b += norm[i * 3 + 2]; cnt++; }
       }
     }
-    r /= cnt; g /= cnt; b /= cnt;
+    r /= cnt * white[0]; g /= cnt * white[1]; b /= cnt * white[2];
     const hue = rgbToHue(r, g, b);
 
-    // shading: mean colour well inside the outline, relative to the outline
+    // shading: how inked is the inside, relative to the outline itself?
     const edgeInk = Math.max(inkOf(r, g, b), 1e-6);
     const rad = Math.max(2, Math.floor(0.25 * w + 0.5));
-    const count = (a) => a.reduce((s, v) => s + v, 0);
+    const count = (a) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s; };
     let core = erode(m, w, h, rad, 0);
     if (count(core) < 12) core = erode(m, w, h, Math.max(1, rad >> 1), 0);
-    let fill = 0;
-    const cc = count(core);
-    if (cc > 0) {
-      let cr = 0, cg = 0, cb = 0;
-      for (let cy = 0; cy < h; cy++) {
-        for (let cx = 0; cx < w; cx++) {
-          if (!core[cy * w + cx]) continue;
-          const i = at(cx, cy);
-          cr += norm[i * 3]; cg += norm[i * 3 + 1]; cb += norm[i * 3 + 2];
-        }
+    // Stripes run along the rows of the warped card, so average each row of
+    // the core separately and look at the inkiest rows; stripes too fine to
+    // resolve still show up as an overall tint.
+    const profile = [];
+    let cr = 0, cg = 0, cb = 0, cc = 0;
+    for (let cy = 0; cy < h; cy++) {
+      let rr = 0, rg = 0, rb = 0, rn = 0;
+      for (let cx = 0; cx < w; cx++) {
+        if (!core[cy * w + cx]) continue;
+        const i = at(cx, cy) * 3;
+        rr += norm[i]; rg += norm[i + 1]; rb += norm[i + 2]; rn++;
       }
-      fill = inkOf(cr / cc, cg / cc, cb / cc) / edgeInk;
+      cr += rr; cg += rg; cb += rb; cc += rn;
+      if (rn >= 3) profile.push(inkOf(rr / rn / white[0], rg / rn / white[1], rb / rn / white[2]));
     }
+    const stripe = stripeScore(profile);
+    let inside = cc > 0 ? inkOf(cr / cc / white[0], cg / cc / white[1], cb / cc / white[2]) : 0;
+    if (profile.length >= 5) {
+      // resolved stripes are mostly gaps, so go by the inkiest rows, to the
+      // extent that the rows really do alternate
+      const peak = percentile(Float32Array.from(profile), 80);
+      inside += stripe * Math.max(peak - inside, 0);
+    }
+    const fill = inside / edgeInk;
 
     // shape
     const hull = convexHull(rowExtents((px, py) => m[py * w + px] === 1, 0, 0, w, h));
     const solidity = sym.area / Math.max(polygonArea(hull), 1);
     const extent = sym.area / (w * h);
-    return { hue, fill, solidity, extent };
+    return { hue, fill, solidity, extent, stripe };
   }
 
   function classifyColor(hue) {
@@ -626,8 +757,10 @@
     return "purple";
   }
 
-  function classifyShading(fill) {
-    if (fill < 0.13) return "open";
+  function classifyShading(fill, stripe) {
+    if (fill < 0.10) return "open";
+    // a little ink inside but no rhythm to it: glare or noise on an open symbol
+    if (fill < 0.20 && stripe < 0.36) return "open";
     if (fill < 0.84) return "striped";
     return "solid";
   }
@@ -635,14 +768,52 @@
   const SHAPE_PROTOTYPES = { diamond: [0.55, 0.965], oval: [0.885, 0.987], squiggle: [0.745, 0.86] };
   const SHAPE_SCALE = [0.07, 0.05];
 
+  function shapeD(name, solidity, extent) {
+    const [e, so] = SHAPE_PROTOTYPES[name];
+    return ((extent - e) / SHAPE_SCALE[0]) ** 2 + ((solidity - so) / SHAPE_SCALE[1]) ** 2;
+  }
+
   function classifyShape(solidity, extent) {
     let best = null, bestD = Infinity;
     for (const name of SHAPES) {
-      const [e, so] = SHAPE_PROTOTYPES[name];
-      const d = ((extent - e) / SHAPE_SCALE[0]) ** 2 + ((solidity - so) / SHAPE_SCALE[1]) ** 2;
+      const d = shapeD(name, solidity, extent);
       if (d < bestD) { best = name; bestD = d; }
     }
     return best;
+  }
+
+  /** How unlike any Set symbol the shape is (0 = textbook). */
+  const shapeDistance = (solidity, extent) => Math.min(...SHAPES.map((n) => shapeD(n, solidity, extent)));
+
+  // Symbols sit in fixed slots: one in the middle, two either side of the
+  // middle, or three a full pitch apart (PITCH = slot spacing / card length).
+  const PITCH = 0.283;
+
+  /**
+   * The number on the card judged by where the symbols are, which still works
+   * when glare has wiped one out. Returns {number (or null), misfit}.
+   */
+  function numberFromSlots(symbols) {
+    const d = symbols.map((s) => ((s.x + s.w / 2) / CARD_W - 0.5) / PITCH);
+    const odd = Math.max(...d.map((v) => Math.abs(v - Math.floor(v + 0.5))));
+    const even = Math.max(...d.map((v) => Math.abs(Math.abs(v) - 0.5)));
+    if (even < odd) return { number: symbols.length <= 2 ? 2 : null, misfit: even };
+    if (Math.max(...d.map(Math.abs)) > 1.5) return { number: null, misfit: odd };
+    if (d.some((v) => Math.abs(v) > 0.5)) return { number: 3, misfit: odd };
+    return { number: symbols.length === 1 ? 1 : null, misfit: odd };
+  }
+
+  /** Fraction of the card covered by ink that is not part of a symbol. */
+  function strayInk(mask, symbols) {
+    const m = Uint8Array.from(mask);
+    for (const s of symbols) {
+      const y0 = Math.max(s.y - 4, 0), y1 = Math.min(s.y + s.h + 4, CARD_H);
+      const x0 = Math.max(s.x - 4, 0), x1 = Math.min(s.x + s.w + 4, CARD_W);
+      for (let y = y0; y < y1; y++) m.fill(0, y * CARD_W + x0, y * CARD_W + x1);
+    }
+    let n = 0;
+    for (let i = 0; i < N; i++) n += m[i];
+    return n / N;
   }
 
   function borderWhiteness(sig) {
@@ -664,7 +835,8 @@
   function readCardOriented(img, q) {
     const card = warpCard(img, q);
     const norm = normalise(card);
-    let { symbols, sig } = findSymbols(norm);
+    let { symbols, sig, mask } = findSymbols(norm, false);
+    if (!symbols.length) ({ symbols, sig, mask } = findSymbols(norm, true));
     if (!symbols.length) return null;
     if (borderWhiteness(sig) < 0.85) return null;
     const hmax = Math.max(...symbols.map((s) => s.h));
@@ -675,16 +847,22 @@
     let sn = 0, cs = 0;
     for (const f of feats) { sn += Math.sin(f.hue * Math.PI / 180); cs += Math.cos(f.hue * Math.PI / 180); }
     const hue = ((Math.atan2(sn / feats.length, cs / feats.length) * 180 / Math.PI) % 360 + 360) % 360;
-    const fill = median(feats.map((f) => f.fill));
+    // glare can only wash ink out, so the most inked symbol is the best witness
+    const fill = Math.max(...feats.map((f) => f.fill));
+    const stripe = Math.max(...feats.map((f) => f.stripe));
     const solidity = median(feats.map((f) => f.solidity));
     const extent = median(feats.map((f) => f.extent));
+    const { number, misfit } = numberFromSlots(symbols);
+    // things that are white and rectangular but not Set cards (the box, the
+    // back of the deck, a phone) fail at least one of these
+    if (number === null || misfit > 0.3 || strayInk(mask, symbols) > 0.07 || shapeDistance(solidity, extent) > 12) return null;
     return {
       quad: q.map((p) => [p[0], p[1]]),
-      number: symbols.length,
+      number,
       color: classifyColor(hue),
-      shading: classifyShading(fill),
+      shading: classifyShading(fill, stripe),
       shape: classifyShape(solidity, extent),
-      features: { hue, fill, solidity, extent },
+      features: { hue, fill, solidity, extent, stripe },
     };
   }
 

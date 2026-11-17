@@ -1,0 +1,16 @@
+{
+  "name": "Set Finder",
+  "short_name": "Set Finder",
+  "description": "Photograph a board of Set cards and see every set on it.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#5b3daa",
+  "theme_color": "#5b3daa",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
