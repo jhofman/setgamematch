@@ -1,0 +1,28 @@
+{
+  "board.jpg": [
+    "2 striped red oval", "1 striped green diamond", "1 open purple diamond", "2 open purple oval",
+    "1 striped green squiggle", "1 open red diamond", "1 open green oval", "1 solid purple squiggle",
+    "2 solid purple diamond", "1 open green diamond", "1 open green squiggle", "1 striped purple diamond"
+  ],
+  "setgame1.jpeg": [
+    "3 open purple diamond", "2 open green diamond", "3 striped red squiggle",
+    "3 solid purple diamond", "3 solid red squiggle", "1 striped green oval",
+    "2 solid red diamond", "3 open purple oval", "3 solid purple oval",
+    "1 solid green oval", "1 open purple oval", "2 striped red diamond"
+  ],
+  "SetCards.jpeg": [
+    "1 open red squiggle", "1 open purple oval", "3 striped red oval",
+    "2 solid purple oval", "2 solid purple squiggle", "3 solid red diamond",
+    "1 striped red diamond", "3 striped green oval", "2 open green squiggle",
+    "3 striped purple oval", "3 striped green squiggle", "2 striped red squiggle"
+  ],
+  "SetCards2.jpeg": [
+    "1 open purple squiggle", "3 striped purple squiggle", "3 solid red oval",
+    "1 solid green oval", "2 solid purple oval", "3 open green diamond",
+    "3 solid red squiggle", "3 striped purple diamond", "1 solid red squiggle",
+    "2 solid red diamond", "1 solid green diamond", "2 solid green oval"
+  ],
+  "cards.png": [
+    "3 solid red oval", "1 striped red diamond", "2 open green squiggle", "3 striped purple oval"
+  ]
+}
